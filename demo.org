@@ -80,6 +80,9 @@ ax.legend()
 [[file:img/auto-loss.png]]
 
 ** Examples
+:PROPERTIES:
+:ID:       fbe96c6e-09a4-49fb-a27c-d29c798e4c1b
+:END:
 #+name: auto-examples
 #+begin_src jupyter-python :file auto-examples.png :exports results
 from data import create_autoencoder_generator
@@ -121,8 +124,7 @@ overlapping particles. It instead opts to blur them.
 #+attr_latex: :width 0.6\textwidth
 #+caption: Encoded exampels for a selection of different latent representation sizes.
 #+RESULTS: auto-examples
-[[file:auto-examples.png]]
-:END:
+[[file:img/auto-examples.png]]
 
 * Task b
 ** Transformer Model
