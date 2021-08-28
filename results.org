@@ -1,0 +1,108 @@
+#+TITLE: Results
+
+* Results
+:PROPERTIES:
+:header-args: :exports both :session video-frame-transformer-plotting1 :eval no-export :results raw :async yes :tangle train_transformer.py
+:END:
+#+begin_src jupyter-python
+from models import ParticlePredictor, ConvolutionalAutoencoder
+from data import create_sequence_generator
+from callbacks import LogImageSequenceCallback
+import tensorflow as tf
+import tensorflow.keras as keras
+
+import numpy as np
+
+import datetime
+import matplotlib.pyplot as plt
+
+image_size = 64
+code_dim = 32
+batch_size = 1
+max_t = 24
+video_dataset = create_sequence_generator(image_size, batch_size, max_t, max_t)
+x, _ = next(video_dataset)
+#+end_src
+
+#+RESULTS:
+
+#+begin_src jupyter-python
+model = keras.models.load_model(
+    f"trained_models/predictor",
+)
+#+end_src
+
+#+RESULTS:
+:RESULTS:
+# [goto error]
+#+begin_example
+
+OSErrorTraceback (most recent call last)
+<ipython-input-2-01f4cded087d> in <module>
+----> 1 model = keras.models.load_model(
+      2     f"trained_models/transformer_predictor",
+      3 )
+
+~/.pyenv/versions/ml/lib/python3.8/site-packages/tensorflow/python/keras/saving/save.py in load_model(filepath, custom_objects, compile, options)
+    209       filepath = path_to_string(filepath)
+    210       if isinstance(filepath, six.string_types):
+--> 211         loader_impl.parse_saved_model(filepath)
+    212         return saved_model_load.load(filepath, compile, options)
+    213
+
+~/.pyenv/versions/ml/lib/python3.8/site-packages/tensorflow/python/saved_model/loader_impl.py in parse_saved_model(export_dir)
+    109       raise IOError("Cannot parse file %s: %s." % (path_to_pbtxt, str(e)))
+    110   else:
+--> 111     raise IOError("SavedModel file does not exist at: %s/{%s|%s}" %
+    112                   (export_dir,
+    113                    constants.SAVED_MODEL_FILENAME_PBTXT,
+
+OSError: SavedModel file does not exist at: trained_models/transformer_predictor/{saved_model.pbtxt|saved_model.pb}
+#+end_example
+:END:
+
+#+name: prediction
+#+begin_src jupyter-python :file img/transformer-sequence2.png
+
+last = 8
+seq = tf.cast(x[0,:last], tf.float32)
+encoded_x = model.autoencoder.encoder(seq)
+fig, axes = plt.subplots(2,max_t, figsize=(15,2), dpi=150, sharex=True, sharey=True)
+plt.subplots_adjust(wspace=0.1, hspace=0.5)
+
+for t in range(max_t):
+    axes[0, t].imshow(x[0][t], cmap='gray')
+    axes[0, t].set_title('T')
+    axes[0, t].axis('off')
+
+    if t < last:
+        axes[1, t].imshow(x[0][t], cmap='gray')
+        axes[1, t].set_title('T')
+        axes[1, t].axis('off')
+    else:
+        batched = tf.expand_dims(encoded_x,0)
+        y_pred = model(batched)
+
+        shifted = tf.roll(encoded_x, -1, axis=0)[:-1]
+        encoded_x = tf.concat((shifted, y_pred), axis=0)
+        dec = model.autoencoder.decoder(y_pred)
+        axes[1, t].imshow(dec[0], cmap='gray')
+        axes[1, t].set_title('P')
+        axes[1, t].axis('off')
+
+#+end_src
+
+#+RESULTS: prediction
+:RESULTS:
+# [goto error]
+:
+: NameErrorTraceback (most recent call last)
+: <ipython-input-3-8f011218f743> in <module>
+:       1 last = 8
+:       2 seq = tf.cast(x[0,:last], tf.float32)
+: ----> 3 encoded_x = model.autoencoder.encoder(seq)
+:       4 fig, axes = plt.subplots(2,max_t, figsize=(15,2), dpi=150, sharex=True, sharey=True)
+:       5 plt.subplots_adjust(wspace=0.1, hspace=0.5)
+:
+: NameError: name 'model' is not defined
+:END:

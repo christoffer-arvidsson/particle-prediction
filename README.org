@@ -1,0 +1,15 @@
+:metadata:
+#+setupfile: ./setup_file.org
+#+roam_alias: "Frame prediction with transformers"
+#+roam_tags: project
+#+created: [2021-04-23 Fri]
+:end:
+#+title: Frame prediction with transformers
+
+This project tackles video frame prediction by using [[file:../../20210323104011-autoencoder.org][Autoencoders]] and
+[[file:../../20210406193007-transformers.org][Transformers]] to predict future frames, given a sequence of frames as inputs.
+
+* Material
+
+bibliography:../../bibliography/references.bib
+bibliographystyle:ieeetr

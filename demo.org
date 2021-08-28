@@ -1,0 +1,170 @@
+#+TITLE: Advanced machine learning - Homework C
+#+SUBTITLE: Video frame prediction using self-attention
+#+AUTHOR: Christoffer Arvidsson
+#+SETUPFILE: ~/Dropbox/org/org-roam/setup_file.org
+#+EXPORT_FILE_NAME: demo
+
+* Dataset
+Train the autoencoder on a frame generator generating batches of single frames.
+#+caption: Code used to create the frame dataset generator
+#+include: lib.org::auto-dataset
+
+Train the Transformer and LSTM model on a sequence generator, which generates batches of sequences.
+#+caption: Code used to create the sequence dataset generator
+#+include: lib.org::sequence-dataset
+
+Another option is to extract $n$ batches from these and train on a finite
+dataset. This would allow preprocessing such as normalizing brightness (which
+would help the sequence models) and pre-encoding the sequences with the encoder
+to speed up training (the performance bottleneck).
+
+However, generators provide potentially infinite training examples, so I used
+that.
+
+* Task a
+** Models
+- Convolutional, each layer halves/doubles the image size.
+- Depth of 4, ie 4 convolution layers, reducing image size by 16
+- Dense layers ensure we output correct latent representation size
+- Upsample instead of transposed convolution, as those can lead to checkerboard patterns cite:odena2016deconvolution.
+- _EXTRA_: Add gaussian noise between encoder and decoder to promote encoding
+  similar images close in latent space, which could help the transformer.
+
+#+caption: Encoder
+#+include: lib.org::auto-encoder
+
+#+caption: Decoder
+#+include: lib.org::auto-decoder
+
+#+caption: Complete autoencoder
+#+include: lib.org::auto-complete
+
+** Parameter
+*Code dimension*
+- Too low and it can't properly encode the information (x, y, radius, brightness, what to do with overlaps).
+- Too high and we get worse compression, which may be bad for the transformer later.
+- At 16, some particles are lost/neglected.
+- 32 and 64 seems like a good choice.
+- No discernable improvement with 128
+** Training
+#+name: auto-loss-plot
+#+begin_src jupyter-python :exports results :file img/auto-loss.png
+import json
+import numpy as np
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+plt.style.use('seaborn-deep')
+
+code_dims = [8, 16, 32, 64, 128]
+
+histories = []
+for code_dim in code_dims:
+    with open(f'trained_models/autoencoder_dim_{code_dim}/history.json', 'r') as f:
+        data = json.loads(f.read())
+        histories.append(data)
+
+fig, ax = plt.subplots(1,1, dpi=200)
+for i, h in enumerate(histories):
+    t = np.arange(len(h['loss']))
+    ax.plot(h['loss'], label=code_dims[i])
+
+ax.set_yscale('log')
+ax.set_xlabel('Loss')
+ax.set_ylabel('Epoch')
+ax.legend()
+#+end_src
+
+#+attr_latex: :width 0.6\textwidth
+#+caption: Loss over epochs for different latent representation sizes in the autoencoder.
+#+RESULTS: auto-loss-plot
+[[file:img/auto-loss.png]]
+
+** Examples
+#+name: auto-examples
+#+begin_src jupyter-python :file auto-examples.png :exports results
+from data import create_autoencoder_generator
+import tensorflow as tf
+import tensorflow.keras as keras
+
+gen = create_autoencoder_generator(64, 5)
+code_dims = [8,16,32,64,128]
+
+x,_ = next(gen)
+fig, axes = plt.subplots(6,5, figsize=(8,10), dpi=100)
+plt.subplots_adjust(wspace=0.1, hspace=0.1)
+
+for ax in axes.reshape(-1):
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+axes[0,0].set_ylabel('Real')
+for i, ax in enumerate(axes[1:,0]):
+    ax.set_ylabel(code_dims[i])
+
+for i in range(5):
+    axes[0, i].imshow(x[i], cmap='gray')
+
+for i, code_dim in enumerate(code_dims):
+    autoencoder = keras.models.load_model(
+        f"trained_models/autoencoder_dim_{code_dim}/model/",
+    )
+
+    dec = autoencoder(x)
+    for ex in range(5):
+        axes[i+1, ex].imshow(dec[ex], cmap='gray')
+
+#+end_src
+
+The =AutoEncoder= has problems with capturing the brightness that results from
+overlapping particles. It instead opts to blur them.
+
+#+attr_latex: :width 0.6\textwidth
+#+caption: Encoded exampels for a selection of different latent representation sizes.
+#+RESULTS: auto-examples
+[[file:auto-examples.png]]
+:END:
+
+* Task b
+** Transformer Model
+- Used 3 =TransformerEncoder= layers, more than that did not increase performance
+- Pool images by flattening into dense layers
+
+#+include: lib.org::transformer
+
+** Parameters
+For self-attention, set N_key and N_val to the same value.
+- Low values reduce the quality of output images, makes it hard to construct latent representations close to the truth.
+- 8 attention heads seemed fine, but the results did not change much with the current model.
+
+** Trained transformer
+Train transformer on the loss from predicting the latent representations, not on
+what the images are. It could be beneficial to train it on images instead, since it could potentially fix some issues the autoencoder might have had.
+
+Predict by shifting output of previous step and appending the predicted frame.
+
+#+caption: Predictions of a single particle made by the transformer with a prior length of 8.
+[[file:img/transformer-sequence.png]]
+
+#+caption: Predictions of multiple particles made by the transformer with a prior length of 8.
+[[file:img/transformer-sequence2.png]]
+
+* Task c
+** LSTM model
+Simple LSTM model
+- Two LSTM layers
+- Five dense layers
+- Accumulate outputs with skip connections
+
+#+caption: LSTM model
+#+include: lib.org::lstm-model
+
+** Trained LSTM
+#+caption: Predictions of a single particle made by the LSTM with a prior length of 8.
+[[file:img/lstm-sequence.png]]
+
+#+caption: Predictions of multiple particles made by the LSTM with a prior length of 8.
+[[file:img/lstm-sequence2.png]]
+
+
+bibliography:../../../../../../../Dropbox/bibliography/references.bib
+bibliographystyle:ieeetr

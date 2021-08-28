@@ -1,0 +1,5 @@
+#+TITLE: Advanced machine learning - Homework C
+#+SUBTITLE: Video frame prediction using self-attention
+#+SETUPFILE: ~/Dropbox/org/org-roam/setup_file.org
+#+EXPORT_FILE_NAME: notebook
+#+options: toc:3 num:3

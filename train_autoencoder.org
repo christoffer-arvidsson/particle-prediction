@@ -1,0 +1,345 @@
+#+TITLE: Train_autoencoder
+#+SETUPFILE: ~/Dropbox/org/org-roam/setup_file.org
+#+EXPORT_FILE_NAME:
+#+auto_tangle: t
+
+* Autoencoder
+:PROPERTIES:
+:header-args: :exports both :session video-frame-autoencoder :eval no-export :results raw :async yes :tangle train_autoencoders.py
+:END:
+** Library setup
+#+begin_src jupyter-python
+import numpy as np
+
+import tensorflow as tf
+from tensorflow import keras
+import tensorflow.keras.layers as layers
+from tensorflow.keras.layers import Layer, Conv1D, Conv2D, MaxPooling2D, Dense, Flatten, Reshape, UpSampling2D, Concatenate, Dropout
+from tensorflow.keras.models import Model
+from tensorflow.keras.losses import MeanSquaredError
+from tensorflow.keras.callbacks import EarlyStopping
+
+import deeptrack as dt # Used to construct dataset of particle movement
+from itertools import islice
+
+import tensorboard
+import datetime
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+plt.close('all')
+plt.style.use('seaborn-deep')
+mpl.rcParams.update({
+    'text.usetex': True,
+    'pgf.rcfonts': False,
+    'lines.linewidth': 1,
+    'figure.dpi': 300,
+})
+#+end_src
+
+#+RESULTS:
+
+** Convolutional Autoencoder
+Purpose of the autoencoder is to encode the image to a smaller representation that the transformer can use more efficiently.
+
+Define an encoder layer that encodes the image to a 1D code of size $n$
+
+Next define a decoder that reverses whatever the encoder did. Often one uses
+transposed convolutions to reverse the previous convolutions done by the
+encoder. However, doing so can introduce checkerboard artifacts into the image
+cite:odena2016deconvolution. Instead, use a combination of upsampling and
+convolutions without any stride.
+
+Put the encoder and decoder together into a complete autoencoder
+
+To train the autoencoder, use Mean squared error to compare the input image with
+the reconstruction from the autoencoder.
+
+#+begin_src jupyter-python :file train_autoencoders.log
+from models import ConvolutionalAutoencoder
+from callbacks import LogImageCallback
+from data import create_autoencoder_generator
+import json
+
+image_size = 64
+batch_size = 128
+code_dims = [8,16,32,64,128]
+depth = 4
+
+for code_dim in code_dims:
+    frame_dataset = create_autoencoder_generator(image_size, batch_size)
+    autoencoder = ConvolutionalAutoencoder(image_size, code_dim, depth)
+    autoencoder.compile(optimizer='adam', loss='mse')
+
+    log_dir = f'logs/auto_{autoencoder.code_dim}_depth_{autoencoder.depth}_{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}'
+    tensorboard_callback = tf.keras.callbacks.TensorBoard(
+        log_dir=log_dir,
+        histogram_freq=1,
+        update_freq='batch',
+    )
+
+    reference_images = tf.convert_to_tensor(np.array([x[0][0] for _, x in zip(range(5), frame_dataset)]))
+    image_callback = LogImageCallback(log_dir, reference_images)
+
+    auto_history = autoencoder.fit(
+        frame_dataset,
+        epochs=20,
+        steps_per_epoch=50,
+        shuffle=True,
+        callbacks=[
+            tensorboard_callback,
+            image_callback,
+            EarlyStopping(monitor='loss',
+                          mode='min',
+                          patience=10,
+                          restore_best_weights=True)
+        ]
+    )
+
+    autoencoder.save(f'trained_models/autoencoder_dim_{code_dim}/model')
+    autoencoder.save_weights(f'trained_models/autoencoder_dim_{code_dim}/weights')
+    history_dict = auto_history.history
+    data = json.dumps(history_dict)
+    with open(f'trained_models/autoencoder_dim_{code_dim}/history.json',"w") as f:
+        f.write(data)
+
+#+end_src
+
+#+RESULTS:
+#+begin_example
+Epoch 1/20
+50/50 [==============================] - 34s 659ms/step - loss: 26.8640
+Epoch 2/20
+50/50 [==============================] - 36s 713ms/step - loss: 9.9843
+Epoch 3/20
+50/50 [==============================] - 38s 751ms/step - loss: 10.3273
+Epoch 4/20
+50/50 [==============================] - 42s 832ms/step - loss: 7.8840
+Epoch 5/20
+50/50 [==============================] - 43s 870ms/step - loss: 6.9132
+Epoch 6/20
+50/50 [==============================] - 43s 862ms/step - loss: 5.8560
+Epoch 7/20
+50/50 [==============================] - 38s 756ms/step - loss: 5.1662
+Epoch 8/20
+50/50 [==============================] - 46s 920ms/step - loss: 6.0290
+Epoch 9/20
+50/50 [==============================] - 47s 942ms/step - loss: 5.8656
+Epoch 10/20
+50/50 [==============================] - 62s 1s/step - loss: 5.5225
+Epoch 11/20
+50/50 [==============================] - 48s 952ms/step - loss: 5.3903
+Epoch 12/20
+50/50 [==============================] - 58s 1s/step - loss: 5.0164
+Epoch 13/20
+50/50 [==============================] - 56s 1s/step - loss: 4.8557
+Epoch 14/20
+50/50 [==============================] - 62s 1s/step - loss: 4.9323
+Epoch 15/20
+50/50 [==============================] - 54s 1s/step - loss: 4.2418
+Epoch 16/20
+50/50 [==============================] - 52s 1s/step - loss: 20.6174
+Epoch 17/20
+50/50 [==============================] - 58s 1s/step - loss: 5.5809
+Epoch 18/20
+50/50 [==============================] - 50s 997ms/step - loss: 4.6041
+Epoch 19/20
+50/50 [==============================] - 48s 965ms/step - loss: 3.9955
+Epoch 20/20
+50/50 [==============================] - 53s 1s/step - loss: 4.0018
+INFO:tensorflow:Assets written to: trained_models/autoencoder_dim_8/model/assets
+Epoch 1/20
+50/50 [==============================] - 50s 991ms/step - loss: 34.3700
+Epoch 2/20
+50/50 [==============================] - 48s 951ms/step - loss: 13.8641
+Epoch 3/20
+50/50 [==============================] - 49s 973ms/step - loss: 12.7542
+Epoch 4/20
+50/50 [==============================] - 50s 990ms/step - loss: 8.2007
+Epoch 5/20
+50/50 [==============================] - 51s 1s/step - loss: 5.5829
+Epoch 6/20
+50/50 [==============================] - 58s 1s/step - loss: 3.7338
+Epoch 7/20
+50/50 [==============================] - 51s 1s/step - loss: 3.7353
+Epoch 8/20
+50/50 [==============================] - 60s 1s/step - loss: 2.9540
+Epoch 9/20
+50/50 [==============================] - 53s 1s/step - loss: 2.4836
+Epoch 10/20
+50/50 [==============================] - 61s 1s/step - loss: 2.5643
+Epoch 11/20
+50/50 [==============================] - 53s 1s/step - loss: 2.3552
+Epoch 12/20
+50/50 [==============================] - 52s 1s/step - loss: 2.1369
+Epoch 13/20
+50/50 [==============================] - 51s 1s/step - loss: 2.0437
+Epoch 14/20
+50/50 [==============================] - 45s 899ms/step - loss: 1.8719
+Epoch 15/20
+50/50 [==============================] - 44s 881ms/step - loss: 1.9022
+Epoch 16/20
+50/50 [==============================] - 50s 1s/step - loss: 1.4241
+Epoch 17/20
+50/50 [==============================] - 50s 998ms/step - loss: 1.7372
+Epoch 18/20
+50/50 [==============================] - 55s 1s/step - loss: 1.5632
+Epoch 19/20
+50/50 [==============================] - 55s 1s/step - loss: 1.3452
+Epoch 20/20
+50/50 [==============================] - 55s 1s/step - loss: 1.2795
+INFO:tensorflow:Assets written to: trained_models/autoencoder_dim_16/model/assets
+Epoch 1/20
+50/50 [==============================] - 52s 1s/step - loss: 41.8621
+Epoch 2/20
+50/50 [==============================] - 51s 1s/step - loss: 17.7775
+Epoch 3/20
+50/50 [==============================] - 52s 1s/step - loss: 10.9976
+Epoch 4/20
+50/50 [==============================] - 55s 1s/step - loss: 5.3142
+Epoch 5/20
+50/50 [==============================] - 52s 1s/step - loss: 3.6889
+Epoch 6/20
+50/50 [==============================] - 65s 1s/step - loss: 3.1479
+Epoch 7/20
+50/50 [==============================] - 52s 1s/step - loss: 2.5550
+Epoch 8/20
+50/50 [==============================] - 51s 1s/step - loss: 2.3891
+Epoch 9/20
+50/50 [==============================] - 57s 1s/step - loss: 2.1094
+Epoch 10/20
+50/50 [==============================] - 62s 1s/step - loss: 2.1577
+Epoch 11/20
+50/50 [==============================] - 50s 995ms/step - loss: 2.1066
+Epoch 12/20
+50/50 [==============================] - 48s 953ms/step - loss: 2.5586
+Epoch 13/20
+50/50 [==============================] - 60s 1s/step - loss: 2.3147
+Epoch 14/20
+50/50 [==============================] - 48s 965ms/step - loss: 1.8832
+Epoch 15/20
+50/50 [==============================] - 50s 990ms/step - loss: 1.3330
+Epoch 16/20
+50/50 [==============================] - 49s 981ms/step - loss: 1.2723
+Epoch 17/20
+50/50 [==============================] - 48s 959ms/step - loss: 1.3652
+Epoch 18/20
+50/50 [==============================] - 49s 972ms/step - loss: 1.3979
+Epoch 19/20
+50/50 [==============================] - 49s 982ms/step - loss: 1.2816
+Epoch 20/20
+50/50 [==============================] - 48s 962ms/step - loss: 0.9862
+INFO:tensorflow:Assets written to: trained_models/autoencoder_dim_32/model/assets
+Epoch 1/20
+50/50 [==============================] - 89s 2s/step - loss: 28.6541
+Epoch 2/20
+50/50 [==============================] - 77s 2s/step - loss: 6.5883
+Epoch 3/20
+50/50 [==============================] - 61s 1s/step - loss: 3.5773
+Epoch 4/20
+50/50 [==============================] - 57s 1s/step - loss: 4.2892
+Epoch 5/20
+50/50 [==============================] - 57s 1s/step - loss: 3.1078
+Epoch 6/20
+50/50 [==============================] - 55s 1s/step - loss: 2.0422
+Epoch 7/20
+50/50 [==============================] - 55s 1s/step - loss: 1.6870
+Epoch 8/20
+50/50 [==============================] - 56s 1s/step - loss: 2.0029
+Epoch 9/20
+50/50 [==============================] - 56s 1s/step - loss: 1.3369
+Epoch 10/20
+50/50 [==============================] - 56s 1s/step - loss: 1.2635
+Epoch 11/20
+50/50 [==============================] - 55s 1s/step - loss: 1.4970
+Epoch 12/20
+50/50 [==============================] - 57s 1s/step - loss: 1.1248
+Epoch 13/20
+50/50 [==============================] - 69s 1s/step - loss: 1.0455
+Epoch 14/20
+50/50 [==============================] - 76s 2s/step - loss: 1.1678
+Epoch 15/20
+50/50 [==============================] - 76s 2s/step - loss: 0.9151
+Epoch 16/20
+50/50 [==============================] - 75s 2s/step - loss: 1.3046
+Epoch 17/20
+50/50 [==============================] - 76s 2s/step - loss: 0.8570
+Epoch 18/20
+50/50 [==============================] - 75s 2s/step - loss: 1.6469
+Epoch 19/20
+50/50 [==============================] - 79s 2s/step - loss: 3.2386
+Epoch 20/20
+50/50 [==============================] - 75s 1s/step - loss: 1.0825
+INFO:tensorflow:Assets written to: trained_models/autoencoder_dim_64/model/assets
+Epoch 1/20
+50/50 [==============================] - 79s 2s/step - loss: 29.6050
+Epoch 2/20
+50/50 [==============================] - 75s 1s/step - loss: 10.9724
+Epoch 3/20
+50/50 [==============================] - 78s 2s/step - loss: 3.4591
+Epoch 4/20
+50/50 [==============================] - 79s 2s/step - loss: 2.6992
+Epoch 5/20
+50/50 [==============================] - 77s 2s/step - loss: 1.7815
+Epoch 6/20
+50/50 [==============================] - 76s 2s/step - loss: 1.9730
+Epoch 7/20
+50/50 [==============================] - 77s 2s/step - loss: 4.2901
+Epoch 8/20
+50/50 [==============================] - 77s 2s/step - loss: 3.5879
+Epoch 9/20
+50/50 [==============================] - 77s 2s/step - loss: 1.4915
+Epoch 10/20
+50/50 [==============================] - 81s 2s/step - loss: 1.0745
+Epoch 11/20
+50/50 [==============================] - 77s 2s/step - loss: 1.0467
+Epoch 12/20
+50/50 [==============================] - 78s 2s/step - loss: 0.9031
+Epoch 13/20
+50/50 [==============================] - 81s 2s/step - loss: 1.0522
+Epoch 14/20
+50/50 [==============================] - 74s 1s/step - loss: 1.0142
+Epoch 15/20
+50/50 [==============================] - 82s 2s/step - loss: 0.9134
+Epoch 16/20
+50/50 [==============================] - 79s 2s/step - loss: 0.7408
+Epoch 17/20
+50/50 [==============================] - 77s 2s/step - loss: 0.7072
+Epoch 18/20
+50/50 [==============================] - 77s 2s/step - loss: 0.7875
+Epoch 19/20
+50/50 [==============================] - 74s 1s/step - loss: 0.7758
+Epoch 20/20
+50/50 [==============================] - 75s 1s/step - loss: 1.2184
+INFO:tensorflow:Assets written to: trained_models/autoencoder_dim_128/model/assets
+#+end_example
+
+
+Plot a few examples to visualize the reconstructions
+
+#+begin_src jupyter-python :file img.png
+fig, axes = plt.subplots(2,5, figsize=(10,5), dpi=200, sharex=True, sharey=True)
+for ax1, ax2 in axes.T:
+    original = next(frame_dataset)[0][0]
+    reconstructed = autoencoder(np.expand_dims(original, 0))
+    ax1.imshow(original, cmap='gray')
+    ax1.set_title('Original')
+    ax2.imshow(reconstructed[0], cmap='gray')
+    ax2.set_title('Reconstruction')
+
+fig.tight_layout()
+#+end_src
+
+#+RESULTS:
+[[file:img.png]]
+
+Evidently, images with overlapping particles are difficult to reconstruct,
+resulting in blurred overlaps. In a sequence, such images should only make up a
+small portion of the sequence, so it should be fine.
+
+#+begin_src jupyter-python
+code = autoencoder.encoder(np.expand_dims(original, 0))
+print(code.shape)
+#+end_src
+
+#+RESULTS:
+: (1, 32)
